@@ -13,8 +13,16 @@
     "windows": [
       {
         "title": "openwhisper",
-        "width": 800,
-        "height": 600
+        "width": 60,
+        "height": 60,
+        "minWidth": 60,
+        "minHeight": 60,
+        "maxWidth": 60,
+        "maxHeight": 60,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {
