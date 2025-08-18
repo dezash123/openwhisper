@@ -10,10 +10,12 @@ let
     dbus
     openssl
     librsvg
+    alsa-lib
+    libclang
+    cmake
   ];
 
   packages = with pkgs; [
-    cargo
     pkg-config
     dbus
     openssl
@@ -22,6 +24,9 @@ let
     libsoup_2_4
     webkitgtk_4_1
     librsvg
+    alsa-lib
+    libclang
+    cmake
   ];
 in
 pkgs.mkShell {

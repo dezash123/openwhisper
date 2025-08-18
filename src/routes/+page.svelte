@@ -2,21 +2,49 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke } from '@tauri-apps/api/core';
   let isRecording = $state(false);
+  let isProcessing = $state(false);
 
   async function toggleMic() {
-    isRecording = !isRecording;
-    console.log('Mic toggled:', isRecording);
-    if (!isRecording) {
-      const text = await invoke('get_text', { text: 'Hello, World!' });
-      await writeText(text);
-      console.log('Text copied to clipboard:', text);
+    if (isProcessing) return;
+    
+    try {
+      if (!isRecording) {
+        // Start recording
+        await invoke('start_recording');
+        isRecording = true;
+        console.log('Recording started');
+      } else {
+        // Stop recording and transcribe
+        isProcessing = true;
+        console.log('Stopping recording and transcribing...');
+        
+        const transcription = await invoke('stop_recording_and_transcribe') as string;
+        
+        if (transcription && transcription.trim()) {
+          await writeText(transcription);
+          console.log('Transcription copied to clipboard:', transcription);
+        } else {
+          console.log('No transcription received');
+        }
+        
+        isRecording = false;
+        isProcessing = false;
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      isRecording = false;
+      isProcessing = false;
     }
   }
 </script>
 
 <main class="container">
-  <button class="mic-button" onclick={toggleMic} class:recording={isRecording}>
-    <img src={isRecording ? "/stop.svg" : "/favicon.svg"} alt={isRecording ? "Stop" : "Microphone"} />
+  <button class="mic-button" onclick={toggleMic} class:recording={isRecording} class:processing={isProcessing}>
+    {#if isProcessing}
+      <div class="loading-spinner"></div>
+    {:else}
+      <img src={isRecording ? "/stop.svg" : "/favicon.svg"} alt={isRecording ? "Stop" : "Microphone"} />
+    {/if}
   </button>
 </main>
 
@@ -79,6 +107,24 @@
 
 .mic-button.recording {
   opacity: 1;
+}
+
+.mic-button.processing {
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #333;
+  border-top: 4px solid #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .mic-button img {
