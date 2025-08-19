@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core';
   let isRecording = $state(false);
   let isProcessing = $state(false);
-  let audioLevel = $state(0);
+  let audioLevels = $state([]);
   let levelInterval: number;
 
   async function toggleMic() {
@@ -11,22 +11,20 @@
     
     try {
       if (!isRecording) {
-        // Start recording
         await invoke('start_recording');
         isRecording = true;
         console.log('Recording started');
         
-        // Start polling audio level
         levelInterval = setInterval(async () => {
           try {
-            audioLevel = await invoke('get_audio_level') as number;
+            audioLevels = await invoke('get_audio_levels') as number[];
           } catch (e) {
-            console.error('Failed to get audio level:', e);
+            console.error('Failed to get audio levels:', e);
           }
-        }, 50); // Poll every 50ms for smooth animation
+        }, 25);
       } else {
-        // Stop recording and transcribe
         isProcessing = true;
+
         console.log('Stopping recording and transcribing...');
         
         const transcription = await invoke('stop_recording_and_transcribe') as string;
@@ -41,14 +39,14 @@
         isRecording = false;
         isProcessing = false;
         clearInterval(levelInterval);
-        audioLevel = 0;
+        audioLevels = [];
       }
     } catch (error) {
       console.error('Error:', error);
       isRecording = false;
       isProcessing = false;
       clearInterval(levelInterval);
-      audioLevel = 0;
+      audioLevels = [];
     }
   }
 </script>
@@ -57,12 +55,14 @@
   <button class="mic-button" onclick={toggleMic} class:recording={isRecording} class:processing={isProcessing}>
     {#if isProcessing}
       <div class="loading-spinner"></div>
+    {:else if isRecording}
+      <div class="frequency-bars">
+        {#each audioLevels as level, i}
+          <div class="bar" style={`height: ${Math.min(level * 50, 25)}px`}></div>
+        {/each}
+      </div>
     {:else}
-      <img 
-        src={isRecording ? "/stop.svg" : "/favicon.svg"} 
-        alt={isRecording ? "Stop" : "Microphone"}
-        style={isRecording ? `filter: brightness(${0.5 + (audioLevel / 100) * 1.5})` : ''}
-      />
+      <img src="/favicon.svg" alt="Microphone" />
     {/if}
   </button>
 </main>
@@ -104,7 +104,7 @@
 
 .mic-button {
   width: 60px;
-  height: 60px;
+  height: 30px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -133,8 +133,8 @@
 }
 
 .loading-spinner {
-  width: 40px;
-  height: 40px;
+  width: 20px;
+  height: 20px;
   border: 4px solid #333;
   border-top: 4px solid #fff;
   border-radius: 50%;
@@ -146,9 +146,26 @@
   100% { transform: rotate(360deg); }
 }
 
+.frequency-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 25px;
+  width: 55px;
+}
+
+.bar {
+  width: 3px;
+  background: #fff;
+  min-height: 2px;
+  border-radius: 1px;
+  transition: height 0.1s ease;
+}
+
 .mic-button img {
-  width: 56px;
-  height: 56px;
+  width: 30px;
+  height: 30px;
   pointer-events: none;
   transition: filter 0.3s ease;
 }
