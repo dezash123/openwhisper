@@ -59,22 +59,24 @@ fn load_or_create_config() -> Result<Config> {
     }
 }
 
-static RECORDING: AtomicBool = AtomicBool::new(false);
-static AUDIO_LEVELS: Mutex<Vec<f32>> = Mutex::new(Vec::new());
-static AUDIO_BUFFER: Mutex<VecDeque<f32>> = Mutex::new(VecDeque::new());
-static APP_CONFIG: Mutex<Option<Config>> = Mutex::new(None);
-
 struct RecordingState {
     stream: cpal::Stream,
     writer: Arc<Mutex<WavWriter<std::io::BufWriter<std::fs::File>>>>,
     path: PathBuf,
 }
 
-static RECORDING_STATE: Mutex<Option<RecordingState>> = Mutex::new(None);
+#[derive(Default)]
+struct AppState {
+    config: Arc<Mutex<Option<Config>>>,
+    recording: Arc<AtomicBool>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+    audio_buffer: Arc<Mutex<VecDeque<f32>>>,
+    recording_state: Arc<Mutex<Option<RecordingState>>>,
+}
 
 #[tauri::command]
-async fn start_recording() -> Result<String, String> {
-    if RECORDING.load(Ordering::SeqCst) {
+async fn start_recording(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    if state.recording.load(Ordering::SeqCst) {
         return Err("Already recording".to_string());
     }
 
@@ -89,8 +91,8 @@ async fn start_recording() -> Result<String, String> {
     
     println!("Selected config: {:?}", audio_config);
     
-    let app_config = APP_CONFIG.lock().unwrap();
-    let app_config = app_config.as_ref().ok_or("Config not initialized")?;
+    let config_guard = state.config.lock().unwrap();
+    let app_config = config_guard.as_ref().ok_or("Config not initialized")?;
     
     let recordings_dir = PathBuf::from(&app_config.recording_dir);
     std::fs::create_dir_all(&recordings_dir)
@@ -110,11 +112,15 @@ async fn start_recording() -> Result<String, String> {
         .map_err(|e| e.to_string())?));
     
     let writer_clone = Arc::clone(&writer);
+    let audio_buffer = Arc::clone(&state.audio_buffer);
+    let audio_levels = Arc::clone(&state.audio_levels);
+    let config = Arc::clone(&state.config);
+    
     let stream = device.build_input_stream(
         &audio_config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             // Add samples to buffer for FFT analysis
-            if let Ok(mut buffer) = AUDIO_BUFFER.lock() {
+            if let Ok(mut buffer) = audio_buffer.lock() {
                 for &sample in data {
                     buffer.push_back(sample);
                     if buffer.len() > 1024 {
@@ -124,11 +130,11 @@ async fn start_recording() -> Result<String, String> {
                 
                 // Perform FFT analysis if we have enough samples
                 if buffer.len() >= 1024 {
-                    if let Ok(config_guard) = APP_CONFIG.lock() {
-                        if let Some(config) = config_guard.as_ref() {
-                            let levels = calculate_frequency_bands(&buffer.make_contiguous()[..1024], config.frequency_bars);
-                            if let Ok(mut audio_levels) = AUDIO_LEVELS.lock() {
-                                *audio_levels = levels;
+                    if let Ok(config_guard) = config.lock() {
+                        if let Some(app_config) = config_guard.as_ref() {
+                            let levels = calculate_frequency_bands(&buffer.make_contiguous()[..1024], app_config.frequency_bars);
+                            if let Ok(mut levels_guard) = audio_levels.lock() {
+                                *levels_guard = levels;
                             }
                         }
                     }
@@ -154,22 +160,22 @@ async fn start_recording() -> Result<String, String> {
         path: recording_path.clone(),
     };
     
-    *RECORDING_STATE.lock().unwrap() = Some(recording_state);
-    RECORDING.store(true, Ordering::SeqCst);
+    *state.recording_state.lock().unwrap() = Some(recording_state);
+    state.recording.store(true, Ordering::SeqCst);
     
     Ok("Recording started".to_string())
 }
 
 #[tauri::command]
-async fn stop_recording_and_transcribe() -> Result<String, String> {
-    if !RECORDING.load(Ordering::SeqCst) {
+async fn stop_recording_and_transcribe(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    if !state.recording.load(Ordering::SeqCst) {
         return Err("Not recording".to_string());
     }
     
-    RECORDING.store(false, Ordering::SeqCst);
+    state.recording.store(false, Ordering::SeqCst);
     
     // Take the recording state and properly close everything
-    let recording_state = RECORDING_STATE.lock().unwrap().take()
+    let recording_state = state.recording_state.lock().unwrap().take()
         .ok_or("No recording state available")?;
     
     // Drop the stream first
@@ -187,7 +193,7 @@ async fn stop_recording_and_transcribe() -> Result<String, String> {
     let recording_path = recording_state.path;
     
     // Transcribe the audio
-    transcribe_audio(recording_path).await
+    transcribe_audio(recording_path, &state).await
         .map_err(|e| format!("Transcription failed: {}", e))
 }
 
@@ -247,9 +253,9 @@ fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
     Ok(samples)
 }
 
-async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
-    let config = APP_CONFIG.lock().unwrap();
-    let config = config.as_ref().ok_or_else(|| anyhow::anyhow!("Config not initialized"))?;
+async fn transcribe_audio(audio_path: PathBuf, state: &AppState) -> Result<String> {
+    let config_guard = state.config.lock().unwrap();
+    let config = config_guard.as_ref().ok_or_else(|| anyhow::anyhow!("Config not initialized"))?;
     
     // Look for whisper model in models directory
     let model_path = std::env::current_dir()?
@@ -339,33 +345,37 @@ fn calculate_frequency_bands(samples: &[f32], num_bands: usize) -> Vec<f32> {
 }
 
 #[tauri::command]
-fn get_audio_levels() -> Vec<f32> {
-    AUDIO_LEVELS.lock().unwrap().clone()
+fn get_audio_levels(state: tauri::State<'_, AppState>) -> Vec<f32> {
+    state.audio_levels.lock().unwrap().clone()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let app_state = AppState::default();
+    
+    // Initialize config
     match load_or_create_config() {
         Ok(config) => {
-            let mut audio_levels = AUDIO_LEVELS.lock().unwrap();
+            let mut audio_levels = app_state.audio_levels.lock().unwrap();
             *audio_levels = vec![0.0; config.frequency_bars];
             
-            *APP_CONFIG.lock().unwrap() = Some(config);
+            *app_state.config.lock().unwrap() = Some(config);
         }
         Err(e) => {
             eprintln!("Failed to load config: {}, using defaults", e);
             let default_config = Config::default();
             
-            let mut audio_levels = AUDIO_LEVELS.lock().unwrap();
+            let mut audio_levels = app_state.audio_levels.lock().unwrap();
             *audio_levels = vec![0.0; default_config.frequency_bars];
             
-            *APP_CONFIG.lock().unwrap() = Some(default_config);
+            *app_state.config.lock().unwrap() = Some(default_config);
         }
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(app_state)
         .invoke_handler(tauri::generate_handler![start_recording, stop_recording_and_transcribe, get_audio_levels])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
