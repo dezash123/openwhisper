@@ -3,6 +3,8 @@
   import { invoke } from '@tauri-apps/api/core';
   let isRecording = $state(false);
   let isProcessing = $state(false);
+  let audioLevel = $state(0);
+  let levelInterval: number;
 
   async function toggleMic() {
     if (isProcessing) return;
@@ -13,6 +15,15 @@
         await invoke('start_recording');
         isRecording = true;
         console.log('Recording started');
+        
+        // Start polling audio level
+        levelInterval = setInterval(async () => {
+          try {
+            audioLevel = await invoke('get_audio_level') as number;
+          } catch (e) {
+            console.error('Failed to get audio level:', e);
+          }
+        }, 50); // Poll every 50ms for smooth animation
       } else {
         // Stop recording and transcribe
         isProcessing = true;
@@ -29,11 +40,15 @@
         
         isRecording = false;
         isProcessing = false;
+        clearInterval(levelInterval);
+        audioLevel = 0;
       }
     } catch (error) {
       console.error('Error:', error);
       isRecording = false;
       isProcessing = false;
+      clearInterval(levelInterval);
+      audioLevel = 0;
     }
   }
 </script>
@@ -43,7 +58,11 @@
     {#if isProcessing}
       <div class="loading-spinner"></div>
     {:else}
-      <img src={isRecording ? "/stop.svg" : "/favicon.svg"} alt={isRecording ? "Stop" : "Microphone"} />
+      <img 
+        src={isRecording ? "/stop.svg" : "/favicon.svg"} 
+        alt={isRecording ? "Stop" : "Microphone"}
+        style={isRecording ? `filter: brightness(${0.5 + (audioLevel / 100) * 1.5})` : ''}
+      />
     {/if}
   </button>
 </main>
