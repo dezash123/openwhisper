@@ -2,15 +2,21 @@ use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use hound::{WavSpec, WavWriter};
 use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
 
-// Global state for recording
+// Safe global state for recording
 static RECORDING: AtomicBool = AtomicBool::new(false);
-static mut RECORDING_PATH: Option<PathBuf> = None;
-static mut STREAM: Option<cpal::Stream> = None;
-static AUDIO_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static AUDIO_LEVEL: AtomicU32 = AtomicU32::new(0);
+
+struct RecordingState {
+    stream: cpal::Stream,
+    writer: Arc<Mutex<WavWriter<std::io::BufWriter<std::fs::File>>>>,
+    path: PathBuf,
+}
+
+static RECORDING_STATE: Mutex<Option<RecordingState>> = Mutex::new(None);
 
 #[tauri::command]
 async fn start_recording() -> Result<String, String> {
@@ -18,29 +24,26 @@ async fn start_recording() -> Result<String, String> {
         return Err("Already recording".to_string());
     }
 
-    let device = cpal::default_host().default_input_device().ok_or("No input device available")?;
+    let device = cpal::default_host().default_input_device()
+        .ok_or_else(|| "No input device available".to_string())?;
 
-    let device_name = device.name().unwrap_or_else(|_| "Unknown device ()".to_string());
+    let device_name = device.name().unwrap_or_else(|_| "Unknown device (probably an error)".to_string());
     println!("Using microphone: {}", device_name);
     
     let config = device.default_input_config()
-        .map_err(|e| format!("Failed to get input config: {}", e))?;
+        .map_err(|e| e.to_string())?;
     
     println!("Selected config: {:?}", config);
     
-    // Create output file path in ~/recordings/
-    let home_dir = std::env::var("HOME").map_err(|_| "Could not find home directory")?;
+    let home_dir = std::env::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
     let recordings_dir = std::path::Path::new(&home_dir).join("openwhisper");
     
-    // Create recordings directory if it doesn't exist
     std::fs::create_dir_all(&recordings_dir)
-        .map_err(|e| format!("Failed to create recordings directory: {}", e))?;
+        .map_err(|e| e.to_string())?;
     
-    let recording_path = recordings_dir.join(format!("recording_{}.wav", 
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()));
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S");
+    let recording_path = recordings_dir.join(format!("recording_{}.wav", timestamp));
     
     let spec = WavSpec {
         channels: config.channels(),
@@ -49,10 +52,8 @@ async fn start_recording() -> Result<String, String> {
         sample_format: hound::SampleFormat::Int,
     };
     
-    let writer = Arc::new(Mutex::new(
-        WavWriter::create(&recording_path, spec)
-            .map_err(|e| format!("Failed to create WAV writer: {}", e))?
-    ));
+    let writer = Arc::new(Mutex::new(WavWriter::create(&recording_path, spec)
+        .map_err(|e| e.to_string())?));
     
     let writer_clone = Arc::clone(&writer);
     let stream = device.build_input_stream(
@@ -71,15 +72,18 @@ async fn start_recording() -> Result<String, String> {
         },
         |err| eprintln!("Stream error: {}", err),
         None,
-    ).map_err(|e| format!("Failed to build stream: {}", e))?;
+    ).map_err(|e| e.to_string())?;
     
-    stream.play().map_err(|e| format!("Failed to start stream: {}", e))?;
+    stream.play().map_err(|e| e.to_string())?;
     
-    unsafe {
-        RECORDING_PATH = Some(recording_path.clone());
-        STREAM = Some(stream);
-    }
+    // Store the recording state safely
+    let recording_state = RecordingState {
+        stream,
+        writer,
+        path: recording_path.clone(),
+    };
     
+    *RECORDING_STATE.lock().unwrap() = Some(recording_state);
     RECORDING.store(true, Ordering::SeqCst);
     
     Ok("Recording started".to_string())
@@ -93,21 +97,23 @@ async fn stop_recording_and_transcribe() -> Result<String, String> {
     
     RECORDING.store(false, Ordering::SeqCst);
     
-    // Stop and drop the stream
-    unsafe {
-        if let Some(stream) = STREAM.take() {
-            drop(stream);
+    // Take the recording state and properly close everything
+    let recording_state = RECORDING_STATE.lock().unwrap().take()
+        .ok_or("No recording state available")?;
+    
+    // Drop the stream first
+    drop(recording_state.stream);
+    
+    // Close the writer properly (this flushes the data)
+    match Arc::try_unwrap(recording_state.writer) {
+        Ok(writer_mutex) => {
+            let writer = writer_mutex.into_inner().unwrap();
+            writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
         }
+        Err(_) => return Err("Writer still has references".to_string()),
     }
     
-    // Get the recording path
-    let recording_path = unsafe {
-        RECORDING_PATH.take()
-            .ok_or("No recording path available")?
-    };
-    
-    // Wait a bit for the file to be fully written
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let recording_path = recording_state.path;
     
     // Transcribe the audio
     transcribe_audio(recording_path).await
@@ -148,8 +154,6 @@ async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
     // Load and convert audio - Whisper expects 16kHz mono
     let mut reader = hound::WavReader::open(&audio_path)?;
     let spec = reader.spec();
-    
-    println!("Audio file specs: {:?}", spec);
     
     let mut samples: Vec<f32> = reader
         .samples::<i16>()
