@@ -186,12 +186,41 @@ async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     
-    // Load and convert audio
+    // Load and convert audio - Whisper expects 16kHz mono
     let mut reader = hound::WavReader::open(&audio_path)?;
-    let samples: Vec<f32> = reader
+    let spec = reader.spec();
+    
+    println!("Audio file specs: {:?}", spec);
+    
+    let mut samples: Vec<f32> = reader
         .samples::<i16>()
-        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+        .map(|s| s.unwrap() as f32 / 32768.0) // Normalize to [-1, 1]
         .collect();
+    
+    // Convert to mono if stereo
+    if spec.channels == 2 {
+        samples = samples
+            .chunks(2)
+            .map(|chunk| (chunk[0] + chunk[1]) / 2.0)
+            .collect();
+    }
+    
+    // Resample to 16kHz if needed (simple approach)
+    if spec.sample_rate != 16000 {
+        let ratio = spec.sample_rate as f32 / 16000.0;
+        let new_len = (samples.len() as f32 / ratio) as usize;
+        let mut resampled = Vec::with_capacity(new_len);
+        
+        for i in 0..new_len {
+            let src_idx = (i as f32 * ratio) as usize;
+            if src_idx < samples.len() {
+                resampled.push(samples[src_idx]);
+            }
+        }
+        samples = resampled;
+    }
+    
+    println!("Processed {} samples for whisper", samples.len());
     
     // Process the audio
     state.full(params, &samples)?;
