@@ -64,9 +64,15 @@ async fn start_recording() -> Result<String, String> {
     
     println!("Selected config: {:?}", config);
     
-    // Create output file path
-    let temp_dir = std::env::temp_dir();
-    let recording_path = temp_dir.join(format!("openwhisper_recording_{}.wav", 
+    // Create output file path in ~/recordings/
+    let home_dir = std::env::var("HOME").map_err(|_| "Could not find home directory")?;
+    let recordings_dir = std::path::Path::new(&home_dir).join("recordings");
+    
+    // Create recordings directory if it doesn't exist
+    std::fs::create_dir_all(&recordings_dir)
+        .map_err(|e| format!("Failed to create recordings directory: {}", e))?;
+    
+    let recording_path = recordings_dir.join(format!("openwhisper_recording_{}.wav", 
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -203,8 +209,8 @@ async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
         }
     }
     
-    // Clean up the temporary file
-    let _ = std::fs::remove_file(audio_path);
+    // Keep the recording file (don't delete it)
+    println!("Recording saved to: {:?}", audio_path);
     
     Ok(transcription.trim().to_string())
 }
