@@ -18,45 +18,9 @@ async fn start_recording() -> Result<String, String> {
         return Err("Already recording".to_string());
     }
 
-    let avail_hosts = cpal::available_hosts();
-    println!("Available hosts: {:?}", avail_hosts);
+    let device = cpal::default_host().default_input_device().ok_or("No input device available")?;
 
-    let host = cpal::default_host();
-    
-    // List all available input devices for debugging
-    println!("Available input devices:");
-    for (index, device) in host.input_devices().unwrap().enumerate() {
-        let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
-        println!("  {}: {}", index, name);
-        
-        // Print supported configs
-        // if let Ok(configs) = device.supported_input_configs() {
-        //     for config in configs {
-        //         println!("    - {:?}", config);
-        //     }
-        // }
-    }
-    
-    // Try to use device index 3, fallback to pipewire, then default
-    let device = host.input_devices()
-        .unwrap()
-        .nth(3)
-        .or_else(|| {
-            host.input_devices()
-                .unwrap()
-                .find(|d| {
-                    if let Ok(name) = d.name() {
-                        name.to_lowercase().contains("pipewire")
-                    } else {
-                        false
-                    }
-                })
-        })
-        .or_else(|| host.default_input_device())
-        .ok_or("No input device available")?;
-    
-    // Print the microphone name
-    let device_name = device.name().unwrap_or_else(|_| "Unknown device".to_string());
+    let device_name = device.name().unwrap_or_else(|_| "Unknown device ()".to_string());
     println!("Using microphone: {}", device_name);
     
     let config = device.default_input_config()
@@ -66,13 +30,13 @@ async fn start_recording() -> Result<String, String> {
     
     // Create output file path in ~/recordings/
     let home_dir = std::env::var("HOME").map_err(|_| "Could not find home directory")?;
-    let recordings_dir = std::path::Path::new(&home_dir).join("recordings");
+    let recordings_dir = std::path::Path::new(&home_dir).join("openwhisper");
     
     // Create recordings directory if it doesn't exist
     std::fs::create_dir_all(&recordings_dir)
         .map_err(|e| format!("Failed to create recordings directory: {}", e))?;
     
-    let recording_path = recordings_dir.join(format!("openwhisper_recording_{}.wav", 
+    let recording_path = recordings_dir.join(format!("recording_{}.wav", 
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -94,11 +58,6 @@ async fn start_recording() -> Result<String, String> {
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // Debug: print when we receive audio data
-            // if data.len() > 0 {
-            //     println!("Received {} audio samples, first sample: {}", data.len(), data[0]);
-            // }
-            
             // Calculate RMS volume for brightness
             let rms: f32 = data.iter().map(|x| x * x).sum::<f32>() / data.len() as f32;
             let volume = (rms.sqrt() * 100.0).min(100.0) as u32;
