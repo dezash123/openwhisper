@@ -1,27 +1,27 @@
 use rustfft::{FftPlanner, num_complex::Complex};
 use iter_num_tools::log_space;
 
+const MIN_FREQUENCY: f32 = 120.0;
+const MAX_FREQUENCY: f32 = 8000.0;
+pub const FFT_SIZE: usize = 4096;
+
 pub fn calculate_frequency_bands(samples: &[f32], num_bands: usize, sample_rate: u32) -> Vec<f32> {
     let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(4096);
+    let fft = planner.plan_fft_forward(FFT_SIZE);
     
     // Convert samples to complex numbers
     let mut buffer: Vec<Complex<f32>> = samples.iter()
         .map(|&s| Complex::new(s, 0.0))
         .collect();
     
-    // Pad or truncate to exactly 4096 samples
-    buffer.resize(4096, Complex::new(0.0, 0.0));
+    buffer.resize(FFT_SIZE, Complex::new(0.0, 0.0));
     
     // Perform FFT
     fft.process(&mut buffer);
     
-    // Convert 80 Hz to 8000 Hz range to bin indices
-    let fft_size = 4096;
-    let min_bin = (80.0 * fft_size as f32 / sample_rate as f32) as usize;
-    let max_bin = ((8000.0 * fft_size as f32 / sample_rate as f32) as usize).min(fft_size / 2);
+    let min_bin = (MIN_FREQUENCY * FFT_SIZE as f32 / sample_rate as f32) as usize;
+    let max_bin = (MAX_FREQUENCY * FFT_SIZE as f32 / sample_rate as f32) as usize;
     
-    // Create logarithmically spaced bin boundaries
     let band_boundaries: Vec<usize> = log_space(min_bin as f32..=max_bin as f32, num_bands + 1)
         .map(|x| x as usize)
         .collect();
@@ -38,7 +38,15 @@ pub fn calculate_frequency_bands(samples: &[f32], num_bands: usize, sample_rate:
                 .map(|sample| sample.norm())
                 .sum();
             
-            *band = (sum / (end - start) as f32).min(1.0);
+            let avg_magnitude = sum / (end - start) as f32;
+            
+            // Apply frequency weighting to counteract 1/f noise and low-frequency dominance
+            // Higher frequencies get boosted
+            let center_bin = (start + end) / 2;
+            let frequency = center_bin as f32 * sample_rate as f32 / FFT_SIZE as f32;
+            let weight = (frequency / 1000.0).sqrt(); // Square root weighting
+            
+            *band = (avg_magnitude * weight).min(1.0);
         }
     }
     
