@@ -3,7 +3,7 @@ use dasp::Sample;
 use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use std::path::PathBuf;
 use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
-use crate::state::AppState;
+use crate::config;
 
 fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::open(audio_path)?;
@@ -60,9 +60,8 @@ fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
     Ok(samples)
 }
 
-pub async fn transcribe_audio(audio_path: PathBuf, state: &AppState) -> Result<String> {
-    let config_guard = state.config.lock().unwrap();
-    let config = config_guard.as_ref().ok_or_else(|| anyhow::anyhow!("Config not initialized"))?;
+pub async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
+    let config = config::get();
     
     let model_path = std::env::current_dir()?
         .join("models")

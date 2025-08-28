@@ -1,52 +1,62 @@
 <script lang="ts">
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, Channel } from '@tauri-apps/api/core';
+  import { emit } from '@tauri-apps/api/event';
+  
   let isRecording = $state(false);
   let isProcessing = $state(false);
   let audioLevels = $state([]);
-  let levelInterval: number;
+  let recordingPromise: Promise<string> | null = null;
 
   async function toggleMic() {
     if (isProcessing) return;
     
     try {
       if (!isRecording) {
-        await invoke('start_recording');
         isRecording = true;
-        console.log('Recording started');
+        console.log('Starting recording...');
         
-        levelInterval = setInterval(async () => {
-          try {
-            audioLevels = await invoke('get_audio_levels') as number[];
-          } catch (e) {
-            console.error('Failed to get audio levels:', e);
-          }
-        }, 25);
+        // Create channel for audio levels
+        const onAudioLevels = new Channel<{levels: number[]}>();
+        onAudioLevels.onmessage = (message) => {
+          audioLevels = message.levels;
+        };
+        
+        // Start the recording and transcription process with channel
+        recordingPromise = invoke('record_and_transcribe', {
+          onAudioLevels
+        }) as Promise<string>;
       } else {
         isProcessing = true;
-
-        console.log('Stopping recording and transcribing...');
         
-        const transcription = await invoke('stop_recording_and_transcribe') as string;
+        console.log('Stopping recording...');
         
-        if (transcription && transcription.trim()) {
-          await writeText(transcription);
-          console.log('Transcription copied to clipboard:', transcription);
-        } else {
-          console.log('No transcription received');
+        // Emit stop event to Rust backend
+        await emit('stop-recording');
+        
+        // Wait for transcription result
+        if (recordingPromise) {
+          const transcription = await recordingPromise;
+          
+          if (transcription && transcription.trim()) {
+            await writeText(transcription);
+            console.log('Transcription copied to clipboard:', transcription);
+          } else {
+            console.log('No transcription received');
+          }
         }
         
         isRecording = false;
         isProcessing = false;
-        clearInterval(levelInterval);
         audioLevels = [];
+        recordingPromise = null;
       }
     } catch (error) {
       console.error('Error:', error);
       isRecording = false;
       isProcessing = false;
-      clearInterval(levelInterval);
       audioLevels = [];
+      recordingPromise = null;
     }
   }
 </script>
