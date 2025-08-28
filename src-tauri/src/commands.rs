@@ -49,6 +49,7 @@ pub async fn start_recording(state: tauri::State<'_, AppState>) -> Result<String
     let audio_buffer = Arc::clone(&state.audio_buffer);
     let audio_levels = Arc::clone(&state.audio_levels);
     let config = Arc::clone(&state.config);
+    let sample_rate = audio_config.sample_rate().0;
     
     let stream = device.build_input_stream(
         &audio_config.into(),
@@ -57,16 +58,16 @@ pub async fn start_recording(state: tauri::State<'_, AppState>) -> Result<String
             if let Ok(mut buffer) = audio_buffer.lock() {
                 for &sample in data {
                     buffer.push_back(sample);
-                    if buffer.len() > 1024 {
+                    if buffer.len() > 4096 {
                         buffer.pop_front();
                     }
                 }
                 
                 // Perform FFT analysis if we have enough samples
-                if buffer.len() >= 1024 {
+                if buffer.len() >= 4096 {
                     if let Ok(config_guard) = config.lock() {
                         if let Some(app_config) = config_guard.as_ref() {
-                            let levels = calculate_frequency_bands(&buffer.make_contiguous()[..1024], app_config.frequency_bars);
+                            let levels = calculate_frequency_bands(&buffer.make_contiguous()[..4096], app_config.frequency_bars, sample_rate);
                             if let Ok(mut levels_guard) = audio_levels.lock() {
                                 *levels_guard = levels;
                             }

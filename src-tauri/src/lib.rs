@@ -4,29 +4,17 @@ mod audio;
 mod transcription;
 mod commands;
 
-use config::{Config, load_or_create_config};
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::default();
-    
-    match load_or_create_config() {
-        Ok(config) => {
-            let mut audio_levels = app_state.audio_levels.lock().unwrap();
-            *audio_levels = vec![0.0; config.frequency_bars];
-            
-            *app_state.config.lock().unwrap() = Some(config);
-        }
-        Err(e) => {
-            eprintln!("Failed to load config: {}, using defaults", e);
-            let default_config = Config::default();
-            
-            let mut audio_levels = app_state.audio_levels.lock().unwrap();
-            *audio_levels = vec![0.0; default_config.frequency_bars];
-            
-            *app_state.config.lock().unwrap() = Some(default_config);
-        }
+    let config = config::get();
+
+    {
+        let mut audio_levels = app_state.audio_levels.lock().unwrap();
+        *audio_levels = vec![0.0; config.frequency_bars];
+        *app_state.config.lock().unwrap() = Some(config);
     }
 
     tauri::Builder::default()

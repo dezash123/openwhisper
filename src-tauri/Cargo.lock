@@ -106,6 +106,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "array_builder"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b4889449b3c4d1813e5a5882ac706e88ae1ceeacc7b835a5e459099a597cc8"
+
+[[package]]
+name = "array_iter_tools"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca6400f530f4ee3d9075bf1bf1e4fed2c1c4bedbd9a56ce7239f748167b191e"
+dependencies = [
+ "array_builder",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2071,6 +2086,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iter_num_tools"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7711c6efabc6320687553b58e0c9edc6a2ea8dcabac1c6d371cd544c81c33173"
+dependencies = [
+ "array_iter_tools",
+ "num-traits",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2246,6 +2271,12 @@ dependencies = [
  "cfg-if",
  "windows-targets 0.53.3",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libredox"
@@ -2513,6 +2544,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -2825,6 +2857,7 @@ dependencies = [
  "dasp",
  "dirs",
  "hound",
+ "iter_num_tools",
  "rubato",
  "rustfft",
  "serde",
