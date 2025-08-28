@@ -1,7 +1,5 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -13,7 +11,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let home_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
             .to_string_lossy()
             .to_string();
         
@@ -25,27 +23,36 @@ impl Default for Config {
     }
 }
 
-pub fn get_config_path() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
-        .join("openwhisper");
+pub fn get() -> Config {
+    let config_dir = match dirs::config_dir() {
+        Some(dir) => dir.join("openwhisper"),
+        None => return Config::default(),
+    };
     
-    fs::create_dir_all(&config_dir)?;
-    Ok(config_dir.join("config.toml"))
-}
-
-pub fn load_or_create_config() -> Result<Config> {
-    let config_path = get_config_path()?;
+    let config_path = config_dir.join("config.toml");
     
-    if config_path.exists() {
-        let config_str = fs::read_to_string(&config_path)?;
-        let config: Config = toml::from_str(&config_str)?;
-        Ok(config)
+    if let Ok(content) = fs::read_to_string(&config_path) {
+        if let Ok(config) = toml::from_str::<Config>(&content) {
+            return config;
+        } else {
+            eprintln!("Failed to parse config file");
+        }
     } else {
-        let default_config = Config::default();
-        let config_str = toml::to_string_pretty(&default_config)?;
-        fs::write(&config_path, config_str)?;
-        println!("Created default config at: {:?}", config_path);
-        Ok(default_config)
+        eprintln!("Config file not found");
     }
+    
+    let default_config = Config::default();
+    if fs::create_dir_all(&config_dir).is_ok() {
+        if let Ok(content) = toml::to_string_pretty(&default_config) {
+            if let Err(e) = fs::write(&config_path, content) {
+                eprintln!("Failed to write config file: {}", e);
+            }
+        } else {
+            eprintln!("Failed to serialize default config to string");
+        }
+    } else {
+        eprintln!("Failed to create config directory");
+    }
+    
+    default_config
 }

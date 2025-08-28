@@ -21,7 +21,7 @@ let
     openssl
     glib
     gtk3
-    libsoup_2_4
+    libsoup_3
     webkitgtk_4_1
     librsvg
     alsa-lib
