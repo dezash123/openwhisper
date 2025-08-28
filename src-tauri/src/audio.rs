@@ -1,15 +1,5 @@
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use cpal::Stream;
-use hound::WavWriter;
 use rustfft::{FftPlanner, num_complex::Complex};
 use iter_num_tools::log_space;
-
-pub struct RecordingState {
-    pub stream: Stream,
-    pub writer: Arc<Mutex<WavWriter<std::io::BufWriter<std::fs::File>>>>,
-    pub path: PathBuf,
-}
 
 pub fn calculate_frequency_bands(samples: &[f32], num_bands: usize, sample_rate: u32) -> Vec<f32> {
     let mut planner = FftPlanner::new();

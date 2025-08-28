@@ -1,12 +1,11 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use tauri::{Listener, ipc::Channel};
 use serde::Serialize;
 use crate::audio::calculate_frequency_bands;
-use crate::state::AppState;
 use crate::transcription::transcribe_audio;
 use crate::config;
 
@@ -18,7 +17,6 @@ pub struct AudioLevels {
 #[tauri::command]
 pub async fn record_and_transcribe(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
     on_audio_levels: Channel<AudioLevels>
 ) -> Result<String, String> {
     let config = config::get();
@@ -48,10 +46,11 @@ pub async fn record_and_transcribe(
         sample_format: hound::SampleFormat::Int,
     };
     
-    let writer = Arc::new(Mutex::new(WavWriter::create(&recording_path, spec)
-        .map_err(|e| e.to_string())?));
+    let mut writer = WavWriter::create(&recording_path, spec)
+        .map_err(|e| e.to_string())?;
     
     let (stop_tx, mut stop_rx) = mpsc::unbounded_channel();
+    let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
     
     // Listen for stop events from frontend
     let stop_tx_clone = stop_tx.clone();
@@ -59,36 +58,14 @@ pub async fn record_and_transcribe(
         let _ = stop_tx_clone.send(());
     });
     
-    let writer_clone = Arc::clone(&writer);
-    let audio_buffer = Arc::clone(&state.audio_buffer);
+    let mut audio_buffer = VecDeque::new();
     let sample_rate = audio_config.sample_rate().0;
     let frequency_bars = config.frequency_bars;
-    let levels_channel = on_audio_levels.clone();
     
     let stream = device.build_input_stream(
         &audio_config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // Add samples to buffer for FFT analysis
-            if let Ok(mut buffer) = audio_buffer.lock() {
-                for &sample in data {
-                    buffer.push_back(sample);
-                    if buffer.len() > 4096 {
-                        buffer.pop_front();
-                    }
-                }
-                
-                // Perform FFT analysis if we have enough samples
-                if buffer.len() >= 4096 {
-                    let levels = calculate_frequency_bands(&buffer.make_contiguous()[..4096], frequency_bars, sample_rate);
-                    let _ = levels_channel.send(AudioLevels { levels });
-                }
-            }
-            
-            if let Ok(mut writer) = writer_clone.lock() {
-                for &sample in data {
-                    let _ = writer.write_sample((sample * i16::MAX as f32) as i16);
-                }
-            }
+            let _ = audio_tx.send(data.to_vec());
         },
         |err| eprintln!("Stream error: {}", err),
         None,
@@ -96,19 +73,37 @@ pub async fn record_and_transcribe(
     
     stream.play().map_err(|e| e.to_string())?;
     
-    // Wait for stop signal
-    stop_rx.recv().await;
+    // Process audio data until stop signal
+    loop {
+        tokio::select! {
+            _ = stop_rx.recv() => break,
+            Some(data) = audio_rx.recv() => {
+                // Write to WAV file
+                for &sample in &data {
+                    let _ = writer.write_sample((sample * i16::MAX as f32) as i16);
+                }
+                
+                // Add to buffer for FFT analysis
+                for &sample in &data {
+                    audio_buffer.push_back(sample);
+                    if audio_buffer.len() > 4096 {
+                        audio_buffer.pop_front();
+                    }
+                }
+                
+                // Perform FFT analysis if we have enough samples
+                if audio_buffer.len() >= 4096 {
+                    let levels = calculate_frequency_bands(&audio_buffer.make_contiguous()[..4096], frequency_bars, sample_rate);
+                    let _ = on_audio_levels.send(AudioLevels { levels });
+                }
+            }
+        }
+    }
     
     drop(stream);
     
     // Finalize the WAV file
-    match Arc::try_unwrap(writer) {
-        Ok(writer_mutex) => {
-            let writer = writer_mutex.into_inner().unwrap();
-            writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
-        }
-        Err(_) => return Err("Writer still has references".to_string()),
-    }
+    writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
     
     transcribe_audio(recording_path).await
         .map_err(|e| format!("Transcription failed: {}", e))
