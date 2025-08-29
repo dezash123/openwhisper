@@ -1,9 +1,44 @@
 use anyhow::Result;
+use std::io::Write;
 use dasp::Sample;
 use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use std::path::PathBuf;
 use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
 use crate::config;
+
+async fn get_model_path(config: &config::Config) -> Result<PathBuf> {
+    let model_filename = format!("{}.bin", config.model_name);
+    let model_path = std::env::current_dir()?
+        .join("models")
+        .join(&model_filename);
+    
+    if !model_path.exists() {
+        if let Some(parent) = model_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        
+        let download_url = format!(
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
+            config.model_name
+        );
+        
+        let mut response = reqwest::get(&download_url).await?;
+        
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to download model: HTTP {}",
+                response.status()
+            ));
+        }
+        
+        let mut file = std::fs::File::create(&model_path)?;
+        while let Some(bytes) = response.chunk().await? {
+            file.write_all(&bytes)?;
+        }
+    }
+    
+    Ok(model_path)
+}
 
 fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::open(audio_path)?;
@@ -46,7 +81,7 @@ fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
             2.0,
             params,
             mono_samples.len(),
-            1, // mono
+            1,
         )?;
         
         let waves_in = vec![mono_samples];
@@ -62,17 +97,7 @@ fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
 
 pub async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
     let config = config::get();
-    
-    let model_path = std::env::current_dir()?
-        .join("models")
-        .join(&config.model_name);
-    
-    if !model_path.exists() {
-        return Err(anyhow::anyhow!(
-            "Whisper model not found at {:?}",
-            model_path
-        ));
-    }
+    let model_path = get_model_path(&config).await?;
     
     let ctx = WhisperContext::new_with_params(
         model_path.to_string_lossy().as_ref(),

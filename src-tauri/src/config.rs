@@ -17,7 +17,7 @@ impl Default for Config {
         
         Self {
             recording_dir: format!("{}/recordings", home_dir),
-            model_name: "ggml-base.en.bin".to_string(),
+            model_name: "base.en".to_string(),
             frequency_bars: 16,
         }
     }
