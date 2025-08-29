@@ -97,7 +97,9 @@ fn preprocess_audio(audio_path: &PathBuf) -> Result<Vec<f32>> {
 
 pub async fn transcribe_audio(audio_path: PathBuf) -> Result<String> {
     let config = config::get();
+    println!("Transcribing audio file: {:?}", audio_path);
     let model_path = get_model_path(&config).await?;
+    println!("Using model: {:?}", model_path);
     
     let ctx = WhisperContext::new_with_params(
         model_path.to_string_lossy().as_ref(),
