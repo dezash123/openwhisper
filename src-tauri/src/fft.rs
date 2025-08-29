@@ -39,7 +39,7 @@ pub fn calculate_frequency_bands(samples: &[f32], num_bands: usize, sample_rate:
         
         let center_bin = (start + end) / 2;
         let frequency = center_bin as f32 * sample_rate as f32 / FFT_SIZE as f32;
-        let weight = (frequency / (4.0 * FFT_SIZE as f32)).sqrt(); // looks right
+        let weight = frequency / (1.5 * FFT_SIZE as f32);
         
         *band = (avg_magnitude * weight).min(1.0);
     }
