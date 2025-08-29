@@ -1,5 +1,5 @@
 mod config;
-mod audio;
+mod fft;
 mod transcription;
 mod commands;
 

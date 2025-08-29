@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use tauri::{Listener, ipc::Channel};
 use serde::Serialize;
-use crate::audio::{calculate_frequency_bands, FFT_SIZE};
+use crate::fft::{calculate_frequency_bands, FFT_SIZE};
 use crate::transcription::transcribe_audio;
 use crate::config;
 

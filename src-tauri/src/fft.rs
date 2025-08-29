@@ -3,7 +3,7 @@ use iter_num_tools::log_space;
 
 const MIN_FREQUENCY: f32 = 120.0;
 const MAX_FREQUENCY: f32 = 8000.0;
-pub const FFT_SIZE: usize = 4096;
+pub const FFT_SIZE: usize = 2048;
 
 pub fn calculate_frequency_bands(samples: &[f32], num_bands: usize, sample_rate: u32) -> Vec<f32> {
     let mut planner = FftPlanner::new();
