@@ -34,14 +34,22 @@ pub async fn record_and_transcribe(
 
     let recording_path = session_dir.join("high-quality.wav");
 
-    let spec = hound::WavSpec {
+    let hq_spec = hound::WavSpec {
         channels: mic_config.channels(),
         sample_rate: mic_config.sample_rate().0,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
 
-    let mut writer = WavWriter::create(&recording_path, spec).unwrap();
+    let lq_spec = hound::WavSpec {
+        channels: mic_config.channels(),
+        sample_rate: mic_config.sample_rate().0,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+
+    let mut hq_writer = WavWriter::create(&recording_path, hq_spec).unwrap();
+    let mut lq_writer = WavWriter::create(&recording_path, lq_spec).unwrap();
 
     // channels for non-blocking
     let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
@@ -77,14 +85,9 @@ pub async fn record_and_transcribe(
         tokio::select! {
             _ = stop_rx.recv() => break,
             Some(data) = audio_rx.recv() => {
-                // Write to WAV file
-                info!("received {} samples", data.len());
+                let mono = whisper_rs::convert_stereo_to_mono_audio(&data).unwrap();
                 for &sample in &data {
                     writer.write_sample(sample).unwrap();
-                    audio_buffer.push_back(sample);
-                    if audio_buffer.len() > 16 {
-                        audio_buffer.pop_front();
-                    }
                 }
 
                 if audio_buffer.len() >= 16 {
