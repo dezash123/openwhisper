@@ -1,7 +1,8 @@
 <script lang="ts">
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke, Channel } from '@tauri-apps/api/core';
-  import { emit } from '@tauri-apps/api/event';
+  import { listen } from '@tauri-apps/api/event';
+  import { warn, debug, trace, info, error } from '@tauri-apps/plugin-log';
   
   let isRecording = $state(false);
   let isProcessing = $state(false);
@@ -14,24 +15,24 @@
     try {
       if (!isRecording) {
         isRecording = true;
-        console.log('Starting recording...');
+        info('Starting recording...');
         
         // Create channel for audio levels
         const onAudioLevels = new Channel<{levels: number[]}>();
         onAudioLevels.onmessage = (message) => {
           audioLevels = message.levels;
+          debug(`Audio levels: ${message.levels}`);
         };
         
         // Start the recording and transcription process with channel
         recordingPromise = invoke('record_and_transcribe', {
-          onAudioLevels
+          audio_levels_chan: onAudioLevels
         }) as Promise<string>;
       } else {
         isProcessing = true;
         
-        console.log('Stopping recording...');
+        info('Stopping recording...');
         
-        // Emit stop event to Rust backend
         await emit('stop-recording');
         
         // Wait for transcription result
@@ -40,9 +41,9 @@
           
           if (transcription && transcription.trim()) {
             await writeText(transcription);
-            console.log('Transcription copied to clipboard:', transcription);
+            info(`Transcription copied to clipboard: ${transcription}`);
           } else {
-            console.log('No transcription received');
+            warn('No transcription received');
           }
         }
         
@@ -52,7 +53,7 @@
         recordingPromise = null;
       }
     } catch (error) {
-      console.error('Error:', error);
+      error(`Error: ${error}`);
       isRecording = false;
       isProcessing = false;
       audioLevels = [];

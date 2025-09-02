@@ -14,7 +14,7 @@ impl Default for Config {
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .to_string_lossy()
             .to_string();
-        
+
         Self {
             recording_dir: format!("{}/recordings", home_dir),
             model_name: "base.en".to_string(),
@@ -28,9 +28,9 @@ pub fn get() -> Config {
         Some(dir) => dir.join("openwhisper"),
         None => return Config::default(),
     };
-    
+
     let config_path = config_dir.join("config.toml");
-    
+
     if let Ok(content) = fs::read_to_string(&config_path) {
         if let Ok(config) = toml::from_str::<Config>(&content) {
             return config;
@@ -40,7 +40,7 @@ pub fn get() -> Config {
     } else {
         eprintln!("Config file not found");
     }
-    
+
     let default_config = Config::default();
     if fs::create_dir_all(&config_dir).is_ok() {
         if let Ok(content) = toml::to_string_pretty(&default_config) {
@@ -53,6 +53,6 @@ pub fn get() -> Config {
     } else {
         eprintln!("Failed to create config directory");
     }
-    
+
     default_config
 }

@@ -36,4 +36,7 @@ dirs = "6.0.0"
 rustfft = "6.2"
 iter_num_tools = "0.6"
 reqwest = "0.12.23"
+ringbuf = "0.4.8"
+tauri-plugin-log = "2"
+log = "0.4.27"
 
