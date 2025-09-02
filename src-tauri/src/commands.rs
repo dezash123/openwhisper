@@ -18,9 +18,9 @@ pub struct AudioLevels {
 #[tauri::command]
 pub async fn record_and_transcribe(
     app: tauri::AppHandle,
-    audio_levels_chan: Channel<AudioLevels>,
+    audio_level_chan: Channel<AudioLevels>,
 ) -> Result<String, String> {
-    println!("recording");
+    info!("recording");
     let config = config::get();
 
     let device = cpal::default_host().default_input_device().unwrap();
@@ -63,14 +63,14 @@ pub async fn record_and_transcribe(
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 audio_tx.send(data.to_vec()).unwrap();
             },
-            |err| eprintln!("Stream error: {}", err),
+            |err| error!("Stream error: {}", err),
             None,
         )
         .map_err(|e| e.to_string())?;
 
     stream.play().unwrap();
 
-    println!("playing");
+    info!("playing");
 
     // Process audio data until stop signal
     loop {
@@ -78,7 +78,7 @@ pub async fn record_and_transcribe(
             _ = stop_rx.recv() => break,
             Some(data) = audio_rx.recv() => {
                 // Write to WAV file
-                println!("received {:?}", data);
+                info!("received {} samples", data.len());
                 for &sample in &data {
                     writer.write_sample(sample).unwrap();
                     audio_buffer.push_back(sample);
@@ -89,9 +89,9 @@ pub async fn record_and_transcribe(
 
                 if audio_buffer.len() >= 16 {
                     // let levels = calculate_frequency_bands(&audio_buffer.make_contiguous()[..FFT_SIZE], frequency_bars, sample_rate);
-                    println!("sent audio");
-                    let levels = vec![5.5; 16];
-                    let _ = audio_levels_chan.send(AudioLevels { levels });
+                    info!("sent audio");
+                    let levels = audio_buffer.make_contiguous()[..16].to_vec();
+                    let _ = audio_level_chan.send(AudioLevels { levels });
                 }
             }
         }

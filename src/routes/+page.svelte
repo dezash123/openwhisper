@@ -1,7 +1,7 @@
 <script lang="ts">
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke, Channel } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
+  import { emit } from '@tauri-apps/api/event';
   import { warn, debug, trace, info, error } from '@tauri-apps/plugin-log';
   
   let isRecording = $state(false);
@@ -18,15 +18,15 @@
         info('Starting recording...');
         
         // Create channel for audio levels
-        const onAudioLevels = new Channel<{levels: number[]}>();
-        onAudioLevels.onmessage = (message) => {
+        const audioLevelChan = new Channel<{levels: number[]}>();
+        audioLevelChan.onmessage = (message) => {
           audioLevels = message.levels;
           debug(`Audio levels: ${message.levels}`);
         };
         
         // Start the recording and transcription process with channel
         recordingPromise = invoke('record_and_transcribe', {
-          audio_levels_chan: onAudioLevels
+          audioLevelChan
         }) as Promise<string>;
       } else {
         isProcessing = true;
@@ -37,13 +37,17 @@
         
         // Wait for transcription result
         if (recordingPromise) {
-          const transcription = await recordingPromise;
-          
-          if (transcription && transcription.trim()) {
-            await writeText(transcription);
-            info(`Transcription copied to clipboard: ${transcription}`);
-          } else {
-            warn('No transcription received');
+          try {
+            const transcription = await recordingPromise;
+            
+            if (transcription && transcription.trim()) {
+              await writeText(transcription);
+              info(`Transcription copied to clipboard: ${transcription}`);
+            } else {
+              warn('No transcription received');
+            }
+          } catch (recordingError) {
+            error(`Recording error: ${recordingError}`);
           }
         }
         
@@ -52,8 +56,8 @@
         audioLevels = [];
         recordingPromise = null;
       }
-    } catch (error) {
-      error(`Error: ${error}`);
+    } catch (err) {
+      error(`Error: ${err}`);
       isRecording = false;
       isProcessing = false;
       audioLevels = [];
