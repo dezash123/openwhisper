@@ -9,6 +9,11 @@
     "core:default",
     "opener:default",
     "clipboard-manager:allow-write-text",
-    "log:default"
+    "core:window:allow-set-max-size",
+    "core:window:allow-set-min-size",
+    "core:window:allow-set-size",
+    "core:window:allow-center",
+    "log:default",
+    "dialog:default"
   ]
 }
