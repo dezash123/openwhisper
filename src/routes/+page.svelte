@@ -2,7 +2,7 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke, Channel } from '@tauri-apps/api/core';
   import { emit } from '@tauri-apps/api/event';
-  import { warn, debug, trace, info, error } from '@tauri-apps/plugin-log';
+  import { warn, debug, info, error } from '@tauri-apps/plugin-log';
   
   let isRecording = $state(false);
   let isProcessing = $state(false);
