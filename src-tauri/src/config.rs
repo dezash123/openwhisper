@@ -5,7 +5,8 @@ use std::fs;
 pub struct Config {
     pub recording_dir: String,
     pub model_name: String,
-    pub frequency_bars: usize,
+    pub audio_quality: String,
+    pub model_weights_path: String,
 }
 
 impl Default for Config {
@@ -18,7 +19,8 @@ impl Default for Config {
         Self {
             recording_dir: format!("{}/recordings", home_dir),
             model_name: "base.en".to_string(),
-            frequency_bars: 16,
+            audio_quality: "high".to_string(),
+            model_weights_path: format!("{}/recordings/models", home_dir),
         }
     }
 }
@@ -31,28 +33,46 @@ pub fn get() -> Config {
 
     let config_path = config_dir.join("config.toml");
 
-    if let Ok(content) = fs::read_to_string(&config_path) {
-        if let Ok(config) = toml::from_str::<Config>(&content) {
-            return config;
-        } else {
-            eprintln!("Failed to parse config file");
+    match fs::read_to_string(&config_path) {
+        Ok(content) => match toml::from_str::<Config>(&content) {
+            Ok(cfg) => return cfg,
+            Err(e) => {
+                eprintln!("Failed to parse config file ({}), regenerating defaults", e);
+            }
+        },
+        Err(_) => {
+            eprintln!("Config file not found, creating defaults");
         }
-    } else {
-        eprintln!("Config file not found");
     }
 
     let default_config = Config::default();
-    if fs::create_dir_all(&config_dir).is_ok() {
-        if let Ok(content) = toml::to_string_pretty(&default_config) {
-            if let Err(e) = fs::write(&config_path, content) {
-                eprintln!("Failed to write config file: {}", e);
-            }
-        } else {
-            eprintln!("Failed to serialize default config to string");
-        }
-    } else {
-        eprintln!("Failed to create config directory");
+    if let Err(e) = save(&default_config) {
+        eprintln!("Failed to write default config: {}", e);
+    }
+    default_config
+}
+
+pub fn save(config: &Config) -> Result<(), String> {
+    let config_dir = match dirs::config_dir() {
+        Some(dir) => dir.join("openwhisper"),
+        None => return Err("Unable to resolve config directory".into()),
+    };
+
+    if let Err(e) = fs::create_dir_all(&config_dir) {
+        return Err(format!("Failed to create config dir: {}", e));
     }
 
-    default_config
+    let config_path = config_dir.join("config.toml");
+    let content = toml::to_string_pretty(config).map_err(|e| e.to_string())?;
+    fs::write(&config_path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_config() -> Config {
+    get()
+}
+
+#[tauri::command]
+pub async fn set_config(config: Config) -> Result<(), String> {
+    save(&config)
 }

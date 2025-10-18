@@ -10,7 +10,11 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![commands::record_and_transcribe])
+        .invoke_handler(tauri::generate_handler![
+            commands::record_and_transcribe,
+            config::get_config,
+            config::set_config,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

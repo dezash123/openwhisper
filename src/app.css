@@ -1,0 +1,131 @@
+:root {
+  --color-bg: #000;
+  --color-fg: #fff;
+  --color-border: #333;
+  --color-input-bg: #111;
+  --color-button-bg: #222;
+  --color-button-hover: #2a2a2a;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Button styles */
+.btn {
+  border: none;
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.05s ease;
+}
+
+.btn:hover {
+  opacity: 0.8;
+}
+
+.btn:active {
+  transform: scale(0.95);
+}
+
+/* Icon button styles */
+.btn-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn-icon img {
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+  transition: filter 0.3s ease;
+}
+
+/* Form controls */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.form-select {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.form-input {
+  background: var(--color-input-bg);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.form-button {
+  background: var(--color-button-bg);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.form-button:hover {
+  background: var(--color-button-hover);
+}
+
+/* Layout helpers */
+.flex-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.flex-row .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.container-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  background: var(--color-bg);
+}
+
+.container-centered {
+  justify-content: center;
+  align-items: center;
+}
